@@ -1,4 +1,37 @@
 #include "util.h"
+char* module_name="OBO";
+char* proj_name="web_server";
+
+/* -------------------------------------------*/
+/**
+ * @brief  将libevent中发送数据的方法，提取出来了
+ *
+
+ *
+ * @returns
+ *
+ */
+/* -------------------------------------------*/
+int reply_request(struct evhttp_request *req,const char* response_data)
+{
+	  //HTTP header
+    evhttp_add_header(evhttp_request_get_output_headers(req), "Server", MYHTTPD_SIGNATURE);
+    evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "text/plain; charset=UTF-8");
+    evhttp_add_header(evhttp_request_get_output_headers(req), "Connection", "close");
+
+   struct evbuffer*  evb = evbuffer_new ();
+    evbuffer_add_printf(evb, "%s", response_data);
+    //将封装好的evbuffer 发送给客户端
+    evhttp_send_reply(req, HTTP_OK, "OK", evb);
+	LOG(module_name,proj_name,"[response]:%s\n", response_data);
+
+if (evb)
+{
+    evbuffer_free (evb);
+}
+
+	return 0;
+}
 
 /* -------------------------------------------*/
 /**
@@ -9,8 +42,8 @@
  * @param m
  * @param arg
  *
- * @returns   
- *    
+ * @returns
+ *
  */
 /* -------------------------------------------*/
 size_t deal_response_data(void *ptr, size_t n, size_t m, void *arg)
@@ -31,7 +64,7 @@ size_t deal_response_data(void *ptr, size_t n, size_t m, void *arg)
  *
  * @param str
  *
- * @returns   
+ * @returns
  */
 /* -------------------------------------------*/
 char* get_random_uuid(char *str)
@@ -41,7 +74,7 @@ char* get_random_uuid(char *str)
     uuid_generate(uuid);
     uuid_unparse(uuid, str);
 
-    return str; 
+    return str;
 }
 
 
@@ -52,7 +85,7 @@ char* get_random_uuid(char *str)
  * @param isDriver
  * @param sessionid
  *
- * @returns   
+ * @returns
  */
 /* -------------------------------------------*/
 char *create_sessionid(const char *isDriver, char*sessionid)

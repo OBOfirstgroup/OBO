@@ -1,33 +1,8 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <limits.h>
-
-#include <sys/types.h>
-#include <sys/stat.h>
-
-#include <sys/stat.h>
-#include <sys/socket.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <dirent.h>
-
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-
-#include <event2/bufferevent.h>
-#include <event2/bufferevent_ssl.h>
-#include <event2/event.h>
-#include <event2/http.h>
-#include <event2/buffer.h>
-#include <event2/util.h>
-#include <event2/keyvalq_struct.h>
-
-#include <cJSON.h>
 #include "util.h"
 
+//TODO 稍后改名，/cache/callcar.
 void cache_cb (struct evhttp_request *req, void *arg)
-{ 
+{
     struct evbuffer *evb = NULL;
     const char *uri = evhttp_request_get_uri (req);
     struct evhttp_uri *decoded = NULL;
@@ -44,7 +19,7 @@ void cache_cb (struct evhttp_request *req, void *arg)
 
     /* 这里只处理Post请求, Get请求，就直接return 200 OK  */
     if (evhttp_request_get_command (req) != EVHTTP_REQ_POST)
-    { 
+    {
         evhttp_send_reply (req, 200, "OK", NULL);
         return;
     }
@@ -54,7 +29,7 @@ void cache_cb (struct evhttp_request *req, void *arg)
     //判断此URI是否合法
     decoded = evhttp_uri_parse (uri);
     if (! decoded)
-    { 
+    {
         printf ("It's not a good URI. Sending BADREQUEST\n");
         evhttp_send_error (req, HTTP_BADREQUEST, 0);
         return;
@@ -74,36 +49,66 @@ void cache_cb (struct evhttp_request *req, void *arg)
     /*
        具体的：可以根据Post的参数执行相应操作，然后将结果输出
        ...
-    */
+       */
     //unpack json
     cJSON* root = cJSON_Parse(request_data_buf);
-    cJSON* username = cJSON_GetObjectItem(root, "username");
-    cJSON* password = cJSON_GetObjectItem(root, "password");
-    cJSON* driver = cJSON_GetObjectItem(root, "driver");
+    cJSON* username_obj = cJSON_GetObjectItem(root, "username");
+    cJSON* cmd_obj = cJSON_GetObjectItem(root, "cmd");
+    cJSON* latitude_obj = cJSON_GetObjectItem(root, "latitude");
+    cJSON* longitude_obj = cJSON_GetObjectItem(root, "longitude");
 
-    printf("username = %s\n", username->valuestring);
-    printf("password = %s\n", password->valuestring);
-    printf("driver = %s\n", driver->valuestring);
+
+    char temp_buf[1024]={0};
+
+
+    sprintf(temp_buf+strlen(temp_buf),"username=%s:", username_obj->valuestring);
+    sprintf(temp_buf+strlen(temp_buf),"cmd=%s:", cmd_obj->valuestring);
+    sprintf(temp_buf+strlen(temp_buf),"latitude = %f:", latitude_obj->valuedouble);
+    sprintf(temp_buf+strlen(temp_buf),"longitude = %f", longitude_obj->valuedouble);
+    LOG(module_name,proj_name,temp_buf);
+    //redis op.
+    redisContext *c;
+    redisReply *reply;
+    const char *hostname = "127.0.0.1";
+    int port =6379;
+
+    struct timeval timeout = { 1, 500000 }; // 1.5 seconds
+    c = redisConnectWithTimeout(hostname, port, timeout);
+    if (c == NULL || c->err) {
+        if (c) {
+            LOG(module_name,proj_name,"Connection error: %s\n", c->errstr);
+            redisFree(c);
+        } else {
+            LOG(module_name,proj_name,"Connection error: can't allocate redis context\n");
+        }
+        exit(1);
+    }
+
+    reply = redisCommand(c,"GEORADIUS DRIVER_POOL %f  %f 10 km  asc",longitude_obj->valuedouble,latitude_obj->valuedouble);
+    char driver_name[64]={0};
+    if ((reply->type == REDIS_REPLY_ARRAY)&&(reply->elements>0)) {
+        strcpy(driver_name,reply->element[0]->str);
+        LOG(module_name,proj_name,"chose driver name is:%s",driver_name);
+
+    }else{
+        LOG(module_name,proj_name,"no proper driver can receive order.");
+    }
+    freeReplyObject(reply);
+    redisFree(c);
+
 
     cJSON_Delete(root);
-
-    //查询数据库
-
-
-    //packet json
+    root=NULL;
+    //assemble data.which send to web_server
     root = cJSON_CreateObject();
-
     cJSON_AddStringToObject(root, "result", "ok");
-    //cJSON_AddStringToObject(root, "sessionid", "xxxxxxxx");
+    cJSON_AddStringToObject(root, "username", driver_name);
 
     char *response_data = cJSON_Print(root);
     cJSON_Delete(root);
+    root=NULL;
 
-
-
-
-    /* This holds the content we're sending. */
-
+    //send to web_server.
     //HTTP header
     evhttp_add_header(evhttp_request_get_output_headers(req), "Server", MYHTTPD_SIGNATURE);
     evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "text/plain; charset=UTF-8");
@@ -119,9 +124,7 @@ void cache_cb (struct evhttp_request *req, void *arg)
     if (evb)
         evbuffer_free (evb);
 
-
-    printf("[response]:\n");
-    printf("%s\n", response_data);
+    LOG(module_name,proj_name,"[response]:%s\n", response_data);
 
     free(response_data);
 }

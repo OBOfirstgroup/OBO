@@ -46,8 +46,8 @@
 # endif
 #endif
     /* 选择服务器证书 和 服务器私钥. */
-    const char *certificate_chain = "../keys/server-certificate-chain.pem";
-    const char *private_key = "../keys/server-private-key.pem";
+    const char *certificate_chain = "./keys/server-certificate-chain.pem";
+    const char *private_key = "./keys/server-private-key.pem";
 
 unsigned short serverPort = COMMON_HTTPS_PORT;
 
@@ -151,6 +151,7 @@ static int serve_some_http (void)
     //默认回调
     //专属uri路径回调
     evhttp_set_cb(http, "/persistent", persistent_cb, NULL);
+    evhttp_set_cb(http, "/cache", cache_cb, NULL);
 
     /* 设置监听IP和端口 */
     handle = evhttp_bind_socket_with_handle (http, "0.0.0.0", serverPort);
